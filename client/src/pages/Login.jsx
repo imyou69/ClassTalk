@@ -58,7 +58,7 @@ const Login = () => {
   }
 
   return (
-    <div className='flex items-center justify-center min-h-screen px-6 
+    <div className='flex items-center justify-center h-full px-6 
     sm:px-0 bg-gradient-to-br from-blue-200 to-green-400'>
       <img onClick={()=>navigate('/')} src={assets.logo} alt="" className='absolute left-5 sm:left-20 
       top-5 w-28 sm:32 cursor-pointer' />

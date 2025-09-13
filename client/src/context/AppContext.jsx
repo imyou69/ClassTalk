@@ -19,15 +19,20 @@ export const AppContextProvider = (props)=>{
             if(data.success){
                 setIsLoggedin(true)
                 getUserData()
+            } else {
+                setIsLoggedin(false)
+                setUserData(false)
             }
         }catch(error){
-            toast.error(error.message)
+            setIsLoggedin(false)
+            setUserData(false)
+            // Don't show error toast for auth check failures
         }
     }
 
     useEffect(()=>{
         getAuthState();
-    })
+    }, [])
 
     const getUserData = async()=>{
         try{
@@ -47,14 +52,35 @@ export const AppContextProvider = (props)=>{
                 
                 toast.error('An unexpected error occurred while fetching user data');
             }
+        }
     }
-}
+
+    const logout = async()=>{
+        try{
+            axios.defaults.withCredentials = true 
+            const {data} = await axios.post(backendUrl + '/api/auth/logout')
+            if(data.success){
+                setIsLoggedin(false)
+                setUserData(false)
+                toast.success(data.message || "Logged out successfully")
+            } else {
+                toast.error(data.message || "Logout failed")
+            }
+        }catch(error){
+            console.error('Logout error:', error)
+            // Even if logout fails on server, clear local state
+            setIsLoggedin(false)
+            setUserData(false)
+            toast.error(error.response?.data?.message || error.message || "Logout failed")
+        }
+    }
 
     const value ={
         backendUrl,
         isLoggedin, setIsLoggedin,
         userData, setUserData,
-        getUserData
+        getUserData,
+        logout
     }
     return(
         <AppContent.Provider value={value}>
