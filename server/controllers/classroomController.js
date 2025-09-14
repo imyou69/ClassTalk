@@ -59,9 +59,15 @@ export const joinClassroom = async (req, res) => {
             return res.json({ success: false, message: 'Invite code is required' });
         }
 
-        const classroom = await classroomModel.findOne({ inviteCode });
+        // Find classroom with exact case-sensitive invite code match
+        const classroom = await classroomModel.findOne({ inviteCode: inviteCode });
         if (!classroom) {
             return res.json({ success: false, message: 'Invalid invite code' });
+        }
+
+        // Check if user is the teacher of this classroom
+        if (classroom.teacher.toString() === userId) {
+            return res.json({ success: false, message: 'You cannot join your own classroom as a student' });
         }
 
         // Check if user already enrolled
@@ -122,6 +128,106 @@ export const getUserClassrooms = async (req, res) => {
         });
     } catch (error) {
         console.error('Get user classrooms error:', error);
+        res.json({ success: false, message: error.message });
+    }
+};
+
+// Get classroom details with members
+export const getClassroomDetails = async (req, res) => {
+    try {
+        const { classroomId } = req.params;
+        const userId = req.body.userId; // From userAuth middleware
+
+        // Find classroom and check if user is part of it
+        const classroom = await classroomModel.findOne({
+            _id: classroomId,
+            $or: [
+                { teacher: userId },
+                { students: userId }
+            ]
+        }).populate('teacher', 'name email role').populate('students', 'name email role');
+
+        if (!classroom) {
+            return res.json({ success: false, message: 'Classroom not found or access denied' });
+        }
+
+        // Determine user's role in this classroom
+        const isTeacher = classroom.teacher._id.toString() === userId;
+        const userRole = isTeacher ? 'teacher' : 'student';
+
+        // Prepare members list with roles
+        const members = [
+            {
+                _id: classroom.teacher._id,
+                name: classroom.teacher.name,
+                email: classroom.teacher.email,
+                role: 'teacher',
+                isCurrentUser: classroom.teacher._id.toString() === userId
+            },
+            ...classroom.students.map(student => ({
+                _id: student._id,
+                name: student.name,
+                email: student.email,
+                role: 'student',
+                isCurrentUser: student._id.toString() === userId
+            }))
+        ];
+
+        res.json({ 
+            success: true, 
+            classroom: {
+                _id: classroom._id,
+                name: classroom.name,
+                description: classroom.description,
+                inviteCode: classroom.inviteCode,
+                members: members,
+                userRole: userRole,
+                isTeacher: isTeacher,
+                createdAt: classroom.createdAt
+            }
+        });
+    } catch (error) {
+        console.error('Get classroom details error:', error);
+        res.json({ success: false, message: error.message });
+    }
+};
+
+// Delete classroom (only by teacher)
+export const deleteClassroom = async (req, res) => {
+    try {
+        const { classroomId } = req.params;
+        const userId = req.body.userId; // From userAuth middleware
+
+        // Find classroom and verify user is the teacher
+        const classroom = await classroomModel.findOne({
+            _id: classroomId,
+            teacher: userId
+        });
+
+        if (!classroom) {
+            return res.json({ success: false, message: 'Classroom not found or you are not authorized to delete it' });
+        }
+
+        // Remove classroom from all students' classrooms array
+        await userModel.updateMany(
+            { _id: { $in: classroom.students } },
+            { $pull: { classrooms: classroom._id } }
+        );
+
+        // Remove classroom from teacher's classrooms array
+        await userModel.findByIdAndUpdate(userId, {
+            $pull: { classrooms: classroom._id }
+        });
+
+        // Delete the classroom
+        await classroomModel.findByIdAndDelete(classroomId);
+
+        res.json({ 
+            success: true, 
+            message: 'Classroom deleted successfully' 
+        });
+    } catch (error) {
+        console.error('Delete classroom error:', error);
         res.json({ success: false, message: error.message });
     }
 };

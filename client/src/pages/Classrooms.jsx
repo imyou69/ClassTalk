@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { AppContent } from '../context/AppContext'
 import { toast } from 'react-toastify'
 import axios from 'axios'
+import { FaTrash, FaEllipsisV } from 'react-icons/fa'
 
 const ClassroomManager = () => {
   const navigate = useNavigate()
@@ -10,7 +11,10 @@ const ClassroomManager = () => {
   const [classrooms, setClassrooms] = useState([])
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [showJoinForm, setShowJoinForm] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [classroomToDelete, setClassroomToDelete] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [activeMenu, setActiveMenu] = useState(null)
   
   // Create classroom form state
   const [createForm, setCreateForm] = useState({
@@ -95,11 +99,62 @@ const ClassroomManager = () => {
     }
   }
 
+  const handleDeleteClick = (classroom) => {
+    setClassroomToDelete(classroom)
+    setShowDeleteModal(true)
+    setActiveMenu(null) // Close the menu
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!classroomToDelete) return
+
+    try {
+      setLoading(true)
+      const { data } = await axios.delete(`${backendUrl}/api/classrooms/${classroomToDelete._id}`)
+      if (data.success) {
+        toast.success(data.message)
+        setClassrooms(classrooms.filter(c => c._id !== classroomToDelete._id))
+        setShowDeleteModal(false)
+        setClassroomToDelete(null)
+      } else {
+        toast.error(data.message)
+      }
+    } catch (error) {
+      console.error('Delete classroom error:', error)
+      toast.error(error.response?.data?.message || 'Failed to delete classroom')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDeleteCancel = () => {
+    setShowDeleteModal(false)
+    setClassroomToDelete(null)
+  }
+
+  const toggleMenu = (classroomId) => {
+    setActiveMenu(activeMenu === classroomId ? null : classroomId)
+  }
+
   useEffect(() => {
     if (userData) {
       fetchClassrooms()
     }
   }, [userData])
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (activeMenu && !event.target.closest('.relative')) {
+        setActiveMenu(null)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [activeMenu])
 
   if (!userData) {
     return null
@@ -218,6 +273,39 @@ const ClassroomManager = () => {
         </div>
       )}
 
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4 text-red-600">Delete Classroom</h2>
+            <div className="mb-6">
+              <p className="text-gray-700 mb-2">
+                Are you sure you want to delete the classroom <strong>"{classroomToDelete?.name}"</strong>?
+              </p>
+              <p className="text-sm text-red-600">
+                This action cannot be undone. All students will be removed from this classroom.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={handleDeleteConfirm}
+                disabled={loading}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-md transition-colors disabled:opacity-50"
+              >
+                {loading ? 'Deleting...' : 'Delete'}
+              </button>
+              <button
+                onClick={handleDeleteCancel}
+                disabled={loading}
+                className="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-700 py-2 px-4 rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Classrooms List */}
       {loading && classrooms.length === 0 ? (
         <div className="text-center py-8">
@@ -249,8 +337,7 @@ const ClassroomManager = () => {
           {classrooms.map((classroom) => (
             <div 
               key={classroom._id} 
-              className="bg-white rounded-lg shadow-md p-6 border border-gray-200 cursor-pointer transform transition-all duration-300 hover:shadow-xl hover:-translate-y-2 hover:border-blue-300 group"
-              onClick={() => navigate(`/classroom/${classroom._id}`)}
+              className="bg-white rounded-lg shadow-md p-6 border border-gray-200 transform transition-all duration-300 hover:shadow-xl hover:-translate-y-2 hover:border-blue-300 group"
             >
               <div className="flex justify-between items-start mb-4">
                 <h3 className="text-lg font-semibold text-gray-800 group-hover:text-blue-600 transition-colors duration-300">
@@ -282,11 +369,48 @@ const ClassroomManager = () => {
               
               {/* Hover indicator */}
               <div className="mt-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                <div className="flex items-center text-blue-600 text-sm font-medium">
-                  <span>Click to enter classroom</span>
-                  <svg className="w-4 h-4 ml-2 transform group-hover:translate-x-1 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
+                <div className="flex items-center justify-between">
+                  <div 
+                    className="flex items-center text-blue-600 text-sm font-medium cursor-pointer hover:text-blue-700 transition-colors duration-300"
+                    onClick={() => navigate(`/classroom/${classroom._id}`)}
+                  >
+                    <span>Click to enter classroom</span>
+                    <svg className="w-4 h-4 ml-2 transform group-hover:translate-x-1 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                  
+                  {/* Three-dot menu - only for teachers */}
+                  {classroom.isTeacher && (
+                    <div className="relative">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          toggleMenu(classroom._id)
+                        }}
+                        className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded hover:bg-gray-100"
+                        title="More options"
+                      >
+                        <FaEllipsisV className="w-4 h-4" />
+                      </button>
+                      
+                      {/* Dropdown menu */}
+                      {activeMenu === classroom._id && (
+                        <div className="absolute right-0 bottom-full mb-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDeleteClick(classroom)
+                            }}
+                            className="w-full px-4 py-2 text-left text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2"
+                          >
+                            <FaTrash className="w-4 h-4" />
+                            Delete Classroom
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
